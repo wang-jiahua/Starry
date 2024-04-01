@@ -113,25 +113,6 @@ pub fn syscall_munmap(args: [usize; 6]) -> SyscallResult {
 
 /// # Arguments
 /// * `start` - usize
-/// * `oldlen` - usize
-/// * `newlen` - usize
-/// * `flag` - usize
-pub fn syscall_mremap(args: [usize; 6]) -> SyscallResult {
-    let start = args[0];
-    let oldlen = args[1];
-    let newlen = args[2];
-    let flag = args[3];
-
-    axlog::error!("[mremap()] start: {start}, oldlen: {oldlen}, newlen: {newlen}, flag: {flag:?}",);
-
-    let process = current_process();
-    let addr = process.memory_set.lock().mremap(start.into(), oldlen, newlen);
-    flush_tlb(None);
-    Ok(addr)
-}
-
-/// # Arguments
-/// * `start` - usize
 /// * `len` - usize
 pub fn syscall_msync(args: [usize; 6]) -> SyscallResult {
     let start = args[0];
@@ -161,6 +142,35 @@ pub fn syscall_mprotect(args: [usize; 6]) -> SyscallResult {
     Ok(0)
 }
 
+/// # Arguments
+/// * `old_addr` - usize
+/// * `old_size` - usize
+/// * `new_size` - usize
+/// * `flags` - usize
+/// * `new_addr` - usize
+pub fn syscall_mremap(args: [usize; 6]) -> SyscallResult {
+    use axlog::error;
+
+    let old_addr = args[0];
+    let old_size = args[1];
+    let new_size = args[2];
+    let flags = args[3];
+    let new_addr = args[4];
+
+    error!("[mremap] old_addr: 0x{:x}, old_size: 0x{:x}, new_size: 0x{:x}, flags: {}, new_addr: {}",
+        old_addr,
+        old_size,
+        new_size,
+        flags,
+        new_addr,
+    );
+
+    // Only deal with MREMAP_MAYMOVE
+    let process = current_process();
+    let new_addr = process.memory_set.lock().mremap(old_addr.into(), old_size, new_size);
+    flush_tlb(None);
+    Ok(new_addr)    
+}
 const IPC_PRIVATE: i32 = 0;
 
 bitflags! {
