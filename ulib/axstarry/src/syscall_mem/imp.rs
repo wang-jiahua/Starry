@@ -113,6 +113,25 @@ pub fn syscall_munmap(args: [usize; 6]) -> SyscallResult {
 
 /// # Arguments
 /// * `start` - usize
+/// * `oldlen` - usize
+/// * `newlen` - usize
+/// * `flag` - usize
+pub fn syscall_mremap(args: [usize; 6]) -> SyscallResult {
+    let start = args[0];
+    let oldlen = args[1];
+    let newlen = args[2];
+    let flag = args[3];
+
+    axlog::error!("[mremap()] start: {start}, oldlen: {oldlen}, newlen: {newlen}, flag: {flag:?}",);
+
+    let process = current_process();
+    let addr = process.memory_set.lock().mremap(start.into(), oldlen, newlen);
+    flush_tlb(None);
+    Ok(addr)
+}
+
+/// # Arguments
+/// * `start` - usize
 /// * `len` - usize
 pub fn syscall_msync(args: [usize; 6]) -> SyscallResult {
     let start = args[0];

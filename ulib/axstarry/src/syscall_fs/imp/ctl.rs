@@ -444,7 +444,7 @@ pub fn syscall_ioctl(args: [usize; 6]) -> SyscallResult {
         debug!("fd {} is none", fd);
         return Err(SyscallError::EBADF);
     }
-    if process.manual_alloc_for_lazy(argp.into()).is_err() {
+    if argp != 0 && process.manual_alloc_for_lazy(argp.into()).is_err() {
         return Err(SyscallError::EFAULT); // 地址不合法
     }
 

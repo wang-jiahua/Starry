@@ -12,5 +12,6 @@ testsuits-x86_64-linux-musl.tgz
 .idea/
 arceos-fada.bin.gz
 arceos-fada.itb
-python-lab/opt/
+python-lab/opt
 python-lab/build
+python-lab/alpine

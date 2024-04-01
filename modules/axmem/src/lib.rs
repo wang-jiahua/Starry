@@ -303,6 +303,52 @@ impl MemorySet {
         self.split_for_area(start, size);
     }
 
+    /// mremap. You need to flush tlb after this.
+    pub fn mremap(
+        &mut self,
+        old_start: VirtAddr,
+        old_size: usize,
+        new_size: usize,
+    ) -> isize {
+        info!("目前只实现了MREMAP_MAYMOVE功能");
+
+        info!("这里是希望系统回收多出来的内存?split for_area+munmap?");
+        if old_size > new_size {
+            return old_start.as_usize() as isize;
+        }
+
+        info!("find new area");
+        let start = self.find_free_area(old_start, new_size);
+
+        let addr = match start {
+            Some(start) => {
+                error!("found area [{:?}, {:?})", start, start + new_size);
+
+                self.new_region(start, new_size, MappingFlags::USER | MappingFlags::READ | MappingFlags::WRITE, None, None);
+                flush_tlb(None);
+
+                let end = start + new_size;
+                if self.manual_alloc_range_for_lazy(start.into(),end-1).is_ok() {
+                    let src_data = unsafe { core::slice::from_raw_parts(old_start.as_ptr(), old_size) };
+                    let dst_data = unsafe { core::slice::from_raw_parts_mut(start.as_mut_ptr(), new_size) };
+                    dst_data[..old_size].copy_from_slice(src_data);
+                } else {
+                    info!("分配失败");
+                }
+
+                self.munmap(old_start, old_size);
+                flush_tlb(None);
+                
+                start.as_usize() as isize
+            }
+            None => -1,
+        };
+
+        debug!("[mremap] return addr: 0x{:x}", addr);
+
+        addr
+    }
+
     /// msync
     pub fn msync(&mut self, start: VirtAddr, size: usize) {
         let end = start + size;
