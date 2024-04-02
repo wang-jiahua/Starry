@@ -18,6 +18,8 @@ use super::{syscall_unlinkat, AT_REMOVEDIR};
 extern crate alloc;
 use alloc::string::ToString;
 
+use super::fd_ops::ioctl;
+
 /// 功能:获取当前工作目录；
 /// # Arguments
 /// * `buf`: *mut u8, 一块缓存区,用于保存当前工作目录的字符串。当buf设为NULL,由系统来分配缓存区。
@@ -448,8 +450,9 @@ pub fn syscall_ioctl(args: [usize; 6]) -> SyscallResult {
         return Err(SyscallError::EFAULT); // 地址不合法
     }
 
-    let file = fd_table[fd].clone().unwrap();
-    let _ = file.ioctl(request, argp);
+    // let file = fd_table[fd].clone().unwrap();
+    // let _ = file.ioctl(fd, request, argp);
+    let _ = ioctl(fd, request, argp);
     Ok(0)
 }
 
