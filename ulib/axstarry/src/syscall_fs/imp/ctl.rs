@@ -437,7 +437,7 @@ pub fn syscall_ioctl(args: [usize; 6]) -> SyscallResult {
     let argp = args[2];
     let process = current_process();
     let fd_table = process.fd_manager.fd_table.lock();
-    info!("fd: {}, request: {}, argp: {}", fd, request, argp);
+    info!("fd: {}, request: 0x{:x}, argp: {}", fd, request, argp);
     if fd >= fd_table.len() {
         debug!("fd {} is out of range", fd);
         return Err(SyscallError::EBADF);
@@ -452,8 +452,11 @@ pub fn syscall_ioctl(args: [usize; 6]) -> SyscallResult {
 
     // let file = fd_table[fd].clone().unwrap();
     // let _ = file.ioctl(fd, request, argp);
-    let _ = ioctl(fd, request, argp);
-    Ok(0)
+    let result: SyscallResult = match ioctl(fd, request, argp) {
+        Ok(res) => Ok(res as isize),
+        Err(_) => Ok(0),
+    };
+    result
 }
 
 /// 53

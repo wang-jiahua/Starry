@@ -168,7 +168,9 @@ pub fn ioctl(fd: usize, request: usize, data: usize) -> LinuxResult<c_int> {
             }
             if fd == 0 || fd == 1 || fd == 2 {
                 Ok(0)
-            }else{
+            }else if fd == 4 {
+                Ok(-1)
+            }else {
                 Err(LinuxError::ENOTTY)
             }
         }
