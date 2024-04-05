@@ -149,7 +149,8 @@ pub fn syscall_mprotect(args: [usize; 6]) -> SyscallResult {
 /// * `flags` - usize
 /// * `new_addr` - usize
 pub fn syscall_mremap(args: [usize; 6]) -> SyscallResult {
-    use axlog::error;
+
+    use axlog::{error, info};
 
     let old_addr = args[0];
     let old_size = args[1];
@@ -157,7 +158,7 @@ pub fn syscall_mremap(args: [usize; 6]) -> SyscallResult {
     let flags = args[3];
     let new_addr = args[4];
 
-    error!("[mremap] old_addr: 0x{:x}, old_size: 0x{:x}, new_size: 0x{:x}, flags: {}, new_addr: {}",
+    info!("[mremap] old_addr: 0x{:x}, old_size: 0x{:x}, new_size: 0x{:x}, flags: {}, new_addr: {}",
         old_addr,
         old_size,
         new_size,

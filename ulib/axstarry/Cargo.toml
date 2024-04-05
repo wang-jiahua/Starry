@@ -92,3 +92,8 @@ numeric-enum-macro = { git = "https://github.com/mexus/numeric-enum-macro" }
 bitflags = "2.0"
 rand = { version = "0.8.5", default-features = false, features = ["small_rng"] }
 num_enum = { version = "0.5.11", default-features = false }
+spin = { version = "0.9" }
+flatten_objects = { path = "../../crates/flatten_objects" }
+lazy_static = { version = "1.4", features = ["spin_no_std"] }
+axio = { path = "../../crates/axio" }
+axstd = { path = "../../ulib/axstd", optional = true }

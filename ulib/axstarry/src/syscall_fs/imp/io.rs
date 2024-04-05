@@ -8,7 +8,7 @@ use alloc::vec;
 use axerrno::AxError;
 use axfs::api::{FileIOType, OpenFlags, SeekFrom};
 
-use axlog::{debug, info};
+use axlog::{debug, info, error};
 use axprocess::current_process;
 use axprocess::link::{create_link, deal_with_path, real_path, AT_FDCWD};
 
@@ -169,6 +169,7 @@ pub fn syscall_readv(args: [usize; 6]) -> SyscallResult {
     let iov = args[1] as *mut IoVec;
     let iov_cnt = args[2];
     let mut read_len = 0;
+    info!("[readv()] fd: {}, iov_cnt: {}", fd as i32, iov_cnt);
     // 似乎要判断iov是否分配,但是懒了,反正能过测例
     for i in 0..iov_cnt {
         let io: &IoVec = unsafe { &*iov.add(i) };
@@ -195,6 +196,7 @@ pub fn syscall_writev(args: [usize; 6]) -> SyscallResult {
     let iov = args[1] as *mut IoVec;
     let iov_cnt = args[2];
     let mut write_len = 0;
+    info!("[writev()] fd: {}, iov_cnt: {}", fd as i32, iov_cnt);
     // 似乎要判断iov是否分配,但是懒了,反正能过测例
     for i in 0..iov_cnt {
         let io: &IoVec = unsafe { &(*iov.add(i)) };

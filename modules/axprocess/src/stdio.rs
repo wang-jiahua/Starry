@@ -1,11 +1,9 @@
 use axerrno::{AxError, AxResult};
 use axfs::api::port::{
-    ConsoleWinSize, FileExt, FileIO, FileIOType, OpenFlags, TCGETS, TIOCGPGRP, TIOCGWINSZ,
-    TIOCSPGRP,
+    FileExt, FileIO, FileIOType, OpenFlags,
 };
 use axhal::console::{getchar, write_bytes};
 use axio::{Read, Seek, SeekFrom, Write};
-use axlog::warn;
 use axsync::Mutex;
 use axtask::yield_now;
 /// stdin file for getting chars from console
@@ -108,32 +106,6 @@ impl FileIO for Stdin {
 
     fn executable(&self) -> bool {
         false
-    }
-
-    fn ioctl(&self, request: usize, data: usize) -> AxResult<()> {
-        match request {
-            TIOCGWINSZ => {
-                let winsize = data as *mut ConsoleWinSize;
-                unsafe {
-                    *winsize = ConsoleWinSize::default();
-                }
-                Ok(())
-            }
-            TCGETS | TIOCSPGRP => {
-                warn!("stdin TCGETS | TIOCSPGRP, pretend to be tty.");
-                // pretend to be tty
-                Ok(())
-            }
-
-            TIOCGPGRP => {
-                warn!("stdin TIOCGPGRP, pretend to be have a tty process group.");
-                unsafe {
-                    *(data as *mut u32) = 0;
-                }
-                Ok(())
-            }
-            _ => Err(AxError::Unsupported),
-        }
     }
 
     fn set_status(&self, flags: OpenFlags) -> bool {
