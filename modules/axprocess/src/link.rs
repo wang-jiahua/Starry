@@ -2,6 +2,7 @@
 //! fat32本身不支持符号链接和硬链接，两个指向相同文件的目录条目将会被chkdsk报告为交叉链接并修复
 extern crate alloc;
 use alloc::collections::BTreeMap;
+use alloc::fmt::format;
 use alloc::format;
 use alloc::string::{String, ToString};
 use axerrno::{AxError, AxResult};
@@ -135,11 +136,31 @@ pub unsafe fn raw_ptr_to_ref_str(start: *const u8) -> &'static str {
     if let Ok(s) = core::str::from_utf8(slice) {
         s
     } else {
-        axlog::error!("not utf8 slice");
-        for c in slice {
-            axlog::error!("{c} ");
+        // 删除slice中从0x10到下一个0x2f之间的内容，再重新尝试utf8解码
+        // 例如：/opt/python3.11/{0x10,0xf7,0xff}?/pyvenv.cfg -> /opt/python3.11/pyvenv.cfg
+        let slice = unsafe { core::slice::from_raw_parts_mut((start as *mut u8), len) };
+        if let Some(x10_index) = slice.iter().position(|&x| x == 0x10u8) {
+            if x10_index > 0 && slice[x10_index - 1] == 0x2fu8 {
+                if let Some(x2f_index) = slice[x10_index..].iter().position(|&x| x == 0x2fu8) {
+                    let offset = x2f_index + 1;
+                    for i in x10_index..len - offset {
+                        slice[i] = slice[i + offset];
+                    }
+                    slice[len - offset] = 0;
+                    if let Ok(s) = core::str::from_utf8(slice) {
+                        return s;
+                    }
+                }
+            }
         }
-        axlog::error!("");
+        axlog::error!("not utf8 slice, try command below:");
+        axlog::error!(
+            "$ echo -e \"{}\"",
+            slice
+                .iter()
+                .map(|c| format!("\\x{:x}", c))
+                .collect::<String>()
+        );
         ""
     }
 }
