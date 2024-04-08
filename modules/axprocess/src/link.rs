@@ -125,6 +125,7 @@ pub unsafe fn get_str_len(start: *const u8) -> usize {
     ptr - start as usize
 }
 
+/* 
 #[allow(unused)]
 /// # Safety
 ///
@@ -164,6 +165,40 @@ pub unsafe fn raw_ptr_to_ref_str(start: *const u8) -> &'static str {
         ""
     }
 }
+*/
+
+/// # Safety
+///
+/// The caller must ensure that the pointer is valid and points to a valid C string.
+pub unsafe fn raw_ptr_to_ref_str(start: *const u8) -> String {
+    let len = unsafe { get_str_len(start) };
+    // 因为这里直接用用户空间提供的虚拟地址来访问，所以一定能连续访问到字符串，不需要考虑物理地址是否连续
+    let bytes = unsafe { core::slice::from_raw_parts(start, len) };
+    let mut string = String::new();
+    let mut i = 0;
+    while i < len {
+          match core::str::from_utf8(&bytes[i..]) {
+            Ok(valid) => {
+                string.push_str(valid);
+                break;
+            }
+            Err(error) => {
+                let valid_up_to = error.valid_up_to();
+                let valid = core::str::from_utf8(&bytes[i..(i + valid_up_to)])
+                    .unwrap_or("\u{FFFD}"); // 使用unwrap_or来处理不正确的UTF-8序列
+                string.push_str(valid);
+                if let Some(error_len) = error.error_len() {
+                    i += valid_up_to + error_len; // 跳过无效的字节
+                } else {
+                    // 如果 error_len 是 None，则意味着错误在字节序列的末尾
+                    break;
+                }
+            }
+        }
+    }
+    string 
+}
+
 
 /// 用户看到的文件到实际文件的映射
 pub static LINK_PATH_MAP: Mutex<BTreeMap<String, String>> = Mutex::new(BTreeMap::new());
