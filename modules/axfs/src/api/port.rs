@@ -400,6 +400,8 @@ impl From<usize> for AccessMode {
 #[allow(missing_docs)]
 pub const TCGETS: usize = 0x5401;
 #[allow(missing_docs)]
+pub const TCSETFS: usize = 0x5404;
+#[allow(missing_docs)]
 pub const TIOCGPGRP: usize = 0x540F;
 #[allow(missing_docs)]
 pub const TIOCSPGRP: usize = 0x5410;
