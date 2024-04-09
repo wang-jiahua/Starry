@@ -511,7 +511,7 @@ impl MemorySet {
 
         let addr = match start {
             Some(start) => {
-                error!("found area [{:?}, {:?})", start, start + new_size);
+                info!("found area [{:?}, {:?})", start, start + new_size);
 
                 if old_size > new_size {
                     return old_start.as_usize() as isize;
