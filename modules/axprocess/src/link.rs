@@ -2,6 +2,7 @@
 //! fat32本身不支持符号链接和硬链接，两个指向相同文件的目录条目将会被chkdsk报告为交叉链接并修复
 extern crate alloc;
 use alloc::collections::BTreeMap;
+use alloc::fmt::format;
 use alloc::format;
 use alloc::string::{String, ToString};
 use axerrno::{AxError, AxResult};
@@ -124,6 +125,7 @@ pub unsafe fn get_str_len(start: *const u8) -> usize {
     ptr - start as usize
 }
 
+/* 
 #[allow(unused)]
 /// # Safety
 ///
@@ -135,14 +137,68 @@ pub unsafe fn raw_ptr_to_ref_str(start: *const u8) -> &'static str {
     if let Ok(s) = core::str::from_utf8(slice) {
         s
     } else {
-        axlog::error!("not utf8 slice");
-        for c in slice {
-            axlog::error!("{c} ");
+        // 删除slice中从0x10到下一个0x2f之间的内容，再重新尝试utf8解码
+        // 例如：/opt/python3.11/{0x10,0xf7,0xff}?/pyvenv.cfg -> /opt/python3.11/pyvenv.cfg
+        let slice = unsafe { core::slice::from_raw_parts_mut((start as *mut u8), len) };
+        if let Some(x10_index) = slice.iter().position(|&x| x == 0x10u8) {
+            if x10_index > 0 && slice[x10_index - 1] == 0x2fu8 {
+                if let Some(x2f_index) = slice[x10_index..].iter().position(|&x| x == 0x2fu8) {
+                    let offset = x2f_index + 1;
+                    for i in x10_index..len - offset {
+                        slice[i] = slice[i + offset];
+                    }
+                    slice[len - offset] = 0;
+                    if let Ok(s) = core::str::from_utf8(slice) {
+                        return s;
+                    }
+                }
+            }
         }
-        axlog::error!("");
+        axlog::error!("not utf8 slice, try command below:");
+        axlog::error!(
+            "$ echo -e \"{}\"",
+            slice
+                .iter()
+                .map(|c| format!("\\x{:x}", c))
+                .collect::<String>()
+        );
         ""
     }
 }
+*/
+
+/// # Safety
+///
+/// The caller must ensure that the pointer is valid and points to a valid C string.
+pub unsafe fn raw_ptr_to_ref_str(start: *const u8) -> String {
+    let len = unsafe { get_str_len(start) };
+    // 因为这里直接用用户空间提供的虚拟地址来访问，所以一定能连续访问到字符串，不需要考虑物理地址是否连续
+    let bytes = unsafe { core::slice::from_raw_parts(start, len) };
+    let mut string = String::new();
+    let mut i = 0;
+    while i < len {
+          match core::str::from_utf8(&bytes[i..]) {
+            Ok(valid) => {
+                string.push_str(valid);
+                break;
+            }
+            Err(error) => {
+                let valid_up_to = error.valid_up_to();
+                let valid = core::str::from_utf8(&bytes[i..(i + valid_up_to)])
+                    .unwrap_or("\u{FFFD}"); // 使用unwrap_or来处理不正确的UTF-8序列
+                string.push_str(valid);
+                if let Some(error_len) = error.error_len() {
+                    i += valid_up_to + error_len; // 跳过无效的字节
+                } else {
+                    // 如果 error_len 是 None，则意味着错误在字节序列的末尾
+                    break;
+                }
+            }
+        }
+    }
+    string 
+}
+
 
 /// 用户看到的文件到实际文件的映射
 pub static LINK_PATH_MAP: Mutex<BTreeMap<String, String>> = Mutex::new(BTreeMap::new());
