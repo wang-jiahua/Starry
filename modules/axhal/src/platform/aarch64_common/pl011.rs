@@ -126,11 +126,7 @@ pub fn handle() {
     if is_receive_interrupt {
         dev.ack_interrupts();
         while let Some(c) = dev.getchar() {
-            if c != 127 {
                 AxUart.buffer.lock().push(c);
-            }else{
-                let _ = AxUart.buffer.lock().pop_front();
-            }
         }
     }
 }
