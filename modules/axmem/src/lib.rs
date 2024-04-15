@@ -19,7 +19,7 @@ extern crate log;
 use axhal::{
     arch::flush_tlb,
     mem::{memory_regions, phys_to_virt, PhysAddr, VirtAddr, PAGE_SIZE_4K},
-    paging::{MappingFlags, PageSize, PageTable},
+    paging::{MappingFlags, PageSize, PageTable, PagingError},
 };
 
 // TODO: a real allocator
@@ -506,16 +506,28 @@ impl MemorySet {
 
         assert!(old_start.is_aligned_4k());
 
+        if old_size > new_size {
+            let old_end = old_start + new_size;
+            self.munmap(old_end, old_size - new_size);
+            flush_tlb(None);
+
+            return old_start.as_usize() as isize;
+        }
+
         // Todo: check flags
-        let start = self.find_free_area(old_start, new_size);
+        let start = self.find_free_area(old_start, new_size); 
+        if start.is_none() {
+            return -1;
+        }
 
-        let addr = match start {
+        let old_page_start_addr = old_start.align_down_4k();
+        let old_page_end_addr = old_start + old_size - 1;
+        let old_page_end = old_page_end_addr.align_down_4k().into();
+        let old_page_start: usize = old_page_start_addr.into();
+          
+        let addr: isize = match start {
             Some(start) => {
-                error!("found area [{:?}, {:?})", start, start + new_size);
-
-                if old_size > new_size {
-                    return old_start.as_usize() as isize;
-                }
+                info!("found area [{:?}, {:?})", start, start + new_size);
 
                 self.new_region(
                     start,
@@ -527,25 +539,40 @@ impl MemorySet {
 
                 let end = start + new_size;
                 assert!(end.is_aligned_4k());
-                
-                if self.manual_alloc_range_for_lazy(start, end-1).is_ok() {
-                    let old_data = unsafe {
-                        core::slice::from_raw_parts(old_start.as_ptr(), old_size)
-                    };
-                    let new_data = unsafe {
-                        core::slice::from_raw_parts_mut(start.as_mut_ptr(), new_size)
-                    };
-                    new_data[..old_size].copy_from_slice(old_data);
-                }
 
+                for addr in (old_page_start..=old_page_end).step_by(PAGE_SIZE_4K) {
+                    let vaddr = VirtAddr::from(addr);
+                    match check_page_table_entry_validity(vaddr, &self.page_table) {
+                        Ok(_) => {
+                            // 如果旧地址已经分配内存，进行页copy；否则不做处理
+                            let page_start = start + addr - old_page_start;
+                            // let page_end = page_start + PAGE_SIZE_4K - 1;
+                            if self.manual_alloc_for_lazy(page_start).is_ok() {
+                                let old_data = unsafe {
+                                    core::slice::from_raw_parts(vaddr.as_ptr(), PAGE_SIZE_4K)
+                                };
+                                let new_data = unsafe {
+                                    core::slice::from_raw_parts_mut(page_start.as_mut_ptr(), PAGE_SIZE_4K)
+                                };
+                                new_data[..PAGE_SIZE_4K].copy_from_slice(old_data);
+                            }
+                        }
+                        Err(PagingError::NotMapped) => {
+                            error!("NotMapped addr: {:x}", vaddr);
+                            continue
+                        }
+                        _ => return -1,
+                    };
+                }
                 self.munmap(old_start, old_size);
                 flush_tlb(None);
                 start.as_usize() as isize
             }
             None => -1,
         };
+
         debug!("[mremap] return addr: 0x{:x}", addr);
-        addr 
+        addr
     }
 }
 
@@ -563,20 +590,19 @@ impl MemorySet {
             .iter_mut()
             .find(|(_, area)| area.vaddr <= addr && addr < area.end_va())
         {
-            let entry = self.page_table.get_entry_mut(addr);
-            if entry.is_err() {
-                // 地址不合法
-                return Err(AxError::InvalidInput);
-            }
+            match check_page_table_entry_validity(addr, &self.page_table) {
+                Err(PagingError::NoMemory) => Err(AxError::InvalidInput),
+                Err(PagingError::NotMapped) => {
+                    // 若未分配物理页面，则手动为其分配一个页面，写入到对应页表中
+                    let entry = self.page_table.get_entry_mut(addr).unwrap().0;
 
-            let entry = entry.unwrap().0;
-            if !entry.is_present() {
-                // 若未分配物理页面，则手动为其分配一个页面，写入到对应页表中
-                if !area.handle_page_fault(addr, entry.flags(), &mut self.page_table) {
-                    return Err(AxError::BadAddress);
-                }
+                    if !area.handle_page_fault(addr, entry.flags(), &mut self.page_table) {
+                        return Err(AxError::BadAddress);
+                    }
+                    Ok(())
+                },
+                _ => Ok(())
             }
-            Ok(())
         } else {
             Err(AxError::InvalidInput)
         }
@@ -655,4 +681,21 @@ impl Drop for MemorySet {
     fn drop(&mut self) {
         self.unmap_user_areas();
     }
+}
+
+/// 验证地址是否已分配页面
+pub fn check_page_table_entry_validity(addr: VirtAddr, page_table: &PageTable) -> Result<(), PagingError> {
+    let entry = page_table.get_entry_mut(addr);
+    
+    if entry.is_err() {
+        // 地址不合法
+        return Err(PagingError::NoMemory);
+    }
+
+    let entry = entry.unwrap().0;
+    if !entry.is_present() {
+        return Err(PagingError::NotMapped);
+    }
+
+    Ok(())
 }

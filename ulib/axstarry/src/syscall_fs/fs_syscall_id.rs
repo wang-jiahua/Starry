@@ -24,6 +24,7 @@ pub enum FsSyscallId {
     IOCTL = 29,
     MKDIRAT = 34,
     UNLINKAT = 35,
+    SYMLINKAT = 36,
     LINKAT = 37,
     RENAMEAT = 38,
     UNMOUNT = 39,
