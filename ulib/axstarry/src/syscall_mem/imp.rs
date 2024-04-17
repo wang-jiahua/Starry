@@ -1,4 +1,4 @@
-use crate::{syscall_fs::FileDesc, MMAPFlags, SyscallError, SyscallResult, MMAPPROT};
+use crate::{syscall_fs::FileDesc, MMAPFlags, MREMAPFlags, SyscallError, SyscallResult, MMAPPROT};
 extern crate alloc;
 
 use axhal::{arch::flush_tlb, mem::VirtAddr, paging::MappingFlags};
@@ -166,9 +166,61 @@ pub fn syscall_mremap(args: [usize; 6]) -> SyscallResult {
         new_addr,
     );
 
-    // Only deal with MREMAP_MAYMOVE
+    // old_addr must be aligned
+    // new_size must be greater than 0
+    if !(VirtAddr::from(old_addr).is_aligned_4k()) 
+       || new_size == 0 {
+        return Err(SyscallError::EINVAL)
+    };
+
+    // (new_addr, new_addr + size) must not overlap with (old_addr, old_addr + old_size)
+    if !(new_addr + new_size <= old_addr
+       || new_addr >= old_addr + old_size) {
+        return Err(SyscallError::EINVAL)            
+    };
+
+    let flags = MREMAPFlags::from_bits_truncate(args[3] as u32);
+    let maymove = flags.contains(MREMAPFlags::MREMAP_MAYMOVE);
+    let fixed = flags.contains(MREMAPFlags::MREMAP_FIXED);
+    let dontunmap = flags.contains(MREMAPFlags::MREMAP_DONTUNMAP);
+
+    // MREMAP_FIXED was specified without MREMAP_MAYMOVE
+    if fixed && !maymove {
+        return Err(SyscallError::EINVAL)            
+    };
+
+    // MREMAP_DONTUNMAP was specified without MREMAP_MAYMOVE
+    if dontunmap && !maymove {
+        return Err(SyscallError::EINVAL)            
+    };
+
+    // MREMAP_DONTUNMAP was specified with a size change
+    if dontunmap && old_size != new_size {
+        return Err(SyscallError::EINVAL)            
+    };
+
+    // old_size was 0 and MREMAP_MAYMOVE was not specified
+    if old_size == 0 && !maymove {
+        return Err(SyscallError::EINVAL)            
+    };
+
+    // MREMAP_FIXED is not implemented
+    if fixed {
+        unimplemented!();
+    }
+
     let process = current_process();
-    let new_addr = process.memory_set.lock().mremap(old_addr.into(), old_size, new_size);
+    let old_start: VirtAddr = old_addr.into();
+    if old_size > new_size {
+        let old_end = old_start + new_size;
+        process.memory_set.lock().munmap(old_end, old_size - new_size);
+        flush_tlb(None);
+
+        return Ok(old_start.as_usize() as isize);
+    }
+
+    // Only deal with MREMAP_MAYMOVE now
+    let new_addr = process.memory_set.lock().mremap(old_start, old_size, new_size);
     flush_tlb(None);
     Ok(new_addr)    
 }

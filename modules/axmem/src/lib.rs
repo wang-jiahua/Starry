@@ -504,16 +504,6 @@ impl MemorySet {
             new_size
         );
 
-        assert!(old_start.is_aligned_4k());
-
-        if old_size > new_size {
-            let old_end = old_start + new_size;
-            self.munmap(old_end, old_size - new_size);
-            flush_tlb(None);
-
-            return old_start.as_usize() as isize;
-        }
-
         // Todo: check flags
         let start = self.find_free_area(old_start, new_size); 
         if start.is_none() {
