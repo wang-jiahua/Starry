@@ -1,9 +1,9 @@
 use axerrno::{AxError, AxResult};
-use axfs::api::port::{
-    FileExt, FileIO, FileIOType, OpenFlags,
-};
+use axfs::api::port::{FileExt, FileIO, FileIOType, OpenFlags};
 use axhal::console::{getchar, write_bytes};
 use axio::{Read, Seek, SeekFrom, Write};
+use spinlock::SpinNoIrq;
+use axlog::error;
 use axsync::Mutex;
 use axtask::yield_now;
 /// stdin file for getting chars from console
@@ -21,24 +21,82 @@ pub struct Stderr {
     pub flags: Mutex<OpenFlags>,
 }
 
-fn stdin_read(buf: &mut [u8]) -> AxResult<usize> {
-    let ch: u8;
-    loop {
-        match getchar() {
-            Some(c) => {
-                ch = c;
-                break;
-            }
-            None => {
-                yield_now();
-                continue;
-            }
+const BUFFER_SIZE: usize = 128;
+struct StdioRingBuffer {
+    buffer: [u8; BUFFER_SIZE],
+    head: usize,
+    tail: usize,
+    empty: bool,
+    get_enter: bool,
+}
+
+impl StdioRingBuffer {
+    const fn new() -> Self {
+        StdioRingBuffer {
+            buffer: [0_u8; BUFFER_SIZE],
+            head: 0_usize,
+            tail: 0_usize,
+            empty: true,
+            get_enter: false,
         }
     }
-    unsafe {
-        buf.as_mut_ptr().write_volatile(ch);
+
+    fn push(&mut self, n: u8) {
+        if self.tail != self.head || self.empty {
+            self.buffer[self.tail] = n;
+            self.tail = (self.tail + 1) % BUFFER_SIZE;
+            self.empty = false;
+            self.get_enter = n == b'\n' || n == 9;
+        }
     }
-    Ok(1)
+
+    fn pop(&mut self) -> Option<u8> {
+        if self.empty {
+            None
+        } else {
+            let ret = self.buffer[self.head];
+            self.head = (self.head + 1) % BUFFER_SIZE;
+            if self.head == self.tail {
+                self.empty = true;
+                self.get_enter = false;
+            }
+            Some(ret)
+        }
+    }
+
+    fn is_release(&self) -> bool {
+        !self.empty && self.get_enter
+    }
+}
+
+struct StdioDrv {
+    buffer: SpinNoIrq<StdioRingBuffer>,
+}
+
+static AX_STDIO: StdioDrv = StdioDrv {
+    buffer: SpinNoIrq::new(StdioRingBuffer::new()),
+};
+
+fn console_read_bytes() -> Option<u8> {
+    let ret = getchar().map(|c| if c == b'\r' { b'\n' } else { c });
+    ret
+}
+
+fn console_write_bytes(buf: &[u8]) -> AxResult<usize> {
+    write_bytes(buf);
+    Ok(buf.len())
+}
+
+fn stdin_read(buf: &mut [u8]) -> AxResult<usize> {
+    let read_len = 0;
+    while read_len < buf.len() {
+        if let Some(c) = console_read_bytes() {
+            AX_STDIO.buffer.lock().push(c);
+        } else {
+            break;
+        }
+    }
+    Ok(read_len)
 }
 
 fn stdout_write(buf: &[u8]) -> AxResult<usize> {
@@ -81,7 +139,23 @@ impl FileExt for Stdin {
 
 impl FileIO for Stdin {
     fn read(&self, buf: &mut [u8]) -> AxResult<usize> {
-        stdin_read(buf)
+        let ret = console_read_bytes();
+        if let Some(c) = ret {
+            buf[0] = c;
+            return Ok(1);
+        }
+        loop {
+            let ret = console_read_bytes();
+            if let Some(c) = ret {
+                AX_STDIO.buffer.lock().push(c);
+                console_write_bytes(&[c]);
+            }
+            if AX_STDIO.buffer.lock().is_release() {
+                buf[0] = AX_STDIO.buffer.lock().pop().unwrap();
+                return Ok(1);
+            }
+            yield_now();
+        }
     }
 
     fn get_type(&self) -> FileIOType {
@@ -140,6 +214,7 @@ impl Read for Stdout {
 
 impl Write for Stdout {
     fn write(&mut self, buf: &[u8]) -> AxResult<usize> {
+        error!("write to stdout: {:?}", buf);
         write_bytes(buf);
         Ok(buf.len())
     }

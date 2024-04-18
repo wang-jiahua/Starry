@@ -51,18 +51,6 @@ impl AxRxRingBuffer {
             Some(ret)
         }
     }
-    fn pop_front(&mut self) -> Option<u8> {
-        if self.empty {
-            None
-        } else {
-            let ret = self.buffer[self.tail];
-            self.tail = (self.tail - 1) % BUFFER_SIZE;
-            if self.head == self.tail {
-                self.empty = true;
-            }
-            Some(ret)
-        }
-    }
 }
 
 struct UartDrv {
@@ -126,7 +114,7 @@ pub fn handle() {
     if is_receive_interrupt {
         dev.ack_interrupts();
         while let Some(c) = dev.getchar() {
-                AxUart.buffer.lock().push(c);
+            AxUart.buffer.lock().push(c);
         }
     }
 }
