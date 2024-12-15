@@ -4,7 +4,7 @@ set -e
 ARCH=aarch64
 VER=python3.11
 
-jobs=32
+jobs=8
 install_dir=$PWD/opt/${VER}
 toolchain=${ARCH}-linux-musl
 
@@ -49,7 +49,7 @@ export PKG_CONFIG_PATH=${install_dir}/lib/pkgconfig
 
 unset CFLAGS LDFLAGS
 export CFLAGS+=" -I${install_dir}/include/" # Just to include libffi
-# export LDFLAGS+=" -L${install_dir}/lib/"
+export LDFLAGS+=" -L${install_dir}/lib/"
 
 echo '
 ac_cv_file__dev_ptmx=yes
@@ -63,7 +63,7 @@ ac_cv_file__dev_ptc=no
 # --enable-shared=no
 # --with-system-ffi=no
 
-make -j8 && make install 
+make -j${jobs} && make install 
 # make test
 
 echo ========= Cross compiled python successfully =========
